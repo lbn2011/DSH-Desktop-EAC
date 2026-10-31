@@ -33,7 +33,8 @@ test('Linux installer workflow installs RPM tooling and uploads RPM artifacts', 
   const linuxUpload = installerWorkflow.match(
     /Upload Linux installer packages[\s\S]*?path:([\s\S]*?)if-no-files-found:/,
   )?.[1] || '';
-  assert.match(linuxUpload, /bundle\/rpm\/EAC-Lite-\*\.rpm/);
+  // glob 已放宽以兼容 full 档位（跳过 Lite 重命名，Tauri 原始产物名）。
+  assert.match(linuxUpload, /bundle\/rpm\/\*\.rpm/);
 });
 
 test('RPM audit checks metadata, architecture, runtime closure, and forbidden payloads', () => {
