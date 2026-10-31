@@ -40,7 +40,18 @@ test('安装包装配允许 beta 推送、手动与复用调用，本地测试�
   assert.deepEqual(Object.keys(workflow.on).sort(), ['push', 'workflow_call', 'workflow_dispatch']);
   assert.deepEqual(workflow.on.push, { branches: ['beta'] });
   assert.equal(workflow.on.workflow_call, null);
-  assert.equal(workflow.on.workflow_dispatch, null);
+  // 手动派发可选安装档位：默认 lite，push/复用调用不受影响。
+  assert.deepEqual(workflow.on.workflow_dispatch, {
+    inputs: {
+      distro: {
+        description: '安装档位（lite/full）',
+        type: 'choice',
+        options: ['lite', 'full'],
+        default: 'lite',
+        required: false,
+      },
+    },
+  });
   const manifest = JSON.parse(readFileSync(join(repositoryRoot, 'dsh-desktop', 'package.json'), 'utf8'));
   assert.equal(manifest.scripts.pretest, 'npm run build');
   assert.match(manifest.scripts.test, /^node scripts\/test-runner\.js test\/\*\.test\.ts /);
@@ -66,7 +77,7 @@ test('装配必须先完成固定资源准备，校验闭包后才能构建安�
   assert.equal(step('Fetch Cargo dependencies').run, 'cargo fetch --locked');
   assert.equal(step('Run automated tests').run, 'npm test');
   assert.equal(step('Run automated tests').if, undefined);
-  assert.equal(step('Assemble staged runtime').run, 'node tauri-shell/stage-resources.mjs --target=${{ matrix.target }} --skip-npm');
+  assert.equal(step('Assemble staged runtime').run, 'node tauri-shell/stage-resources.mjs --target=${{ matrix.target }} --distro=${{ inputs.distro || \'lite\' }} --skip-npm');
   assert.equal(step('Verify staged closure and bundle integrity').run, 'node dsh-desktop/scripts/verify-staged-runtime.mjs');
   requireOrder([
     'Verify dsh-dpx submodule pin', 'Prepare vendored kernel', 'Install dependencies',
@@ -87,15 +98,17 @@ test('缓存与安装包按架构隔离，缺少产物必须失败', () => {
     "${{ runner.os }}-${{ matrix.arch }}-kernel-${{ env.KERNEL_VERSION }}-${{ hashFiles('dsh-desktop/scripts/fetch-kernel.ts') }}");
   const windows = step('Upload Windows installer packages');
   const linux = step('Upload Linux installer packages');
-  assert.equal(windows.with?.name, 'eac-lite-windows-${{ matrix.arch }}-installers');
-  assert.equal(linux.with?.name, 'eac-lite-linux-${{ matrix.arch }}-installers');
+  assert.equal(step('Name Lite installer artifacts').if, "inputs.distro != 'full'");
+  assert.equal(windows.with?.name, 'eac-${{ inputs.distro || \'lite\' }}-windows-${{ matrix.arch }}-installers');
+  assert.equal(linux.with?.name, 'eac-${{ inputs.distro || \'lite\' }}-linux-${{ matrix.arch }}-installers');
   assert.equal(windows.if, "runner.os == 'Windows'");
   assert.equal(linux.if, "runner.os == 'Linux'");
   for (const upload of [windows, linux]) assert.equal(upload.with?.['if-no-files-found'], 'error');
-  assert.match(String(windows.with?.path), /bundle\/nsis\/EAC-Lite-\*\.exe/);
+  // 产物 glob 放宽以兼容 lite（重命名后）与 full（Tauri 原始名）两种产物。
+  assert.match(String(windows.with?.path), /bundle\/nsis\/\*\.exe/);
   assert.match(String(windows.with?.path), /portable\/SHA256SUMS\.txt/);
-  assert.match(String(windows.with?.path), /portable\/EAC-Lite-\*\.zip/);
-  assert.match(String(linux.with?.path), /bundle\/rpm\/EAC-Lite-\*\.rpm/);
+  assert.match(String(windows.with?.path), /portable\/\*\.zip/);
+  assert.match(String(linux.with?.path), /bundle\/rpm\/\*\.rpm/);
   requireOrder(['Build Tauri installers', 'Name Lite installer artifacts', 'Build portable package', 'Upload Windows installer packages']);
   requireOrder(['Build Tauri installers', 'Name Lite installer artifacts', 'Audit RPM package', 'Upload Linux installer packages']);
 });
